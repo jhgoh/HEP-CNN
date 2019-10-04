@@ -147,7 +147,7 @@ if not os.path.exists(weightFile):
             model.eval()
             val_loss, val_acc = 0., 0.
             for i, (data, label, weight) in enumerate(tqdm(valLoader)):
-                data = data
+                #data = data.to(device)
                 #weight = weight.float()
 
                 pred = model(data)
