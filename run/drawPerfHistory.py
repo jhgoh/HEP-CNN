@@ -28,7 +28,8 @@ for metric in args.metrics.split(','):
 
 dirs = []
 for d in args.dirs:
-    if not os.path.exists(d+'/resourceByCP_0.csv'): continue
+    if not os.path.exists(d+'/resourceByCP_0.csv') and \
+       not os.path.exists(d+'/resourceByCP_0.csv.gz'): continue
     dirs.append(d)
 
 cols = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
@@ -50,9 +51,12 @@ for d in dirs:
         data[metric].append([])
 
         for ii in range(64):
-            if not os.path.exists('%s/resourceByCP_%d.csv' % (d, ii)): continue
-            usage1 = pd.read_csv('%s/resourceByCP_%d.csv' % (d, ii))
-            usage2 = pd.read_csv('%s/resourceByTime_%d.csv' % (d, ii))
+            suffix = ".csv"
+            if not os.path.exists('%s/resourceByCP_%d.csv' % (d, ii)):
+                if os.path.exists('%s/resourceByCP_%d.csv.gz' % (d, ii)): suffix = ".csv.gz"
+                else: continue
+            usage1 = pd.read_csv('%s/resourceByCP_%d%s' % (d, ii, suffix))
+            usage2 = pd.read_csv('%s/resourceByTime_%d%s' % (d, ii, suffix))
             usage = usage1.append(usage2, ignore_index=True)
 
             usage['Datetime'] = pd.to_datetime(usage['Datetime'], format='%Y-%m-%d %H-%M-%S')

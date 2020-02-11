@@ -1,40 +1,66 @@
-#!/usr/bin/env python
 import torch
 import torch.nn as nn
 
 class MyModel(nn.Module):
     def __init__(self, width, height, model='default'):
         super(MyModel, self).__init__()
-        self.fw = int(width/2/2/2)
-        self.fh = int(height/2/2/2)
+        self.fw = width
+        self.fh = height
 
         self.nch = 5 if '5ch' in model else 3
         self.doLog = ('log' in model)
 
-        self.conv = nn.Sequential(
-            nn.Conv2d(self.nch, 64, kernel_size=(3, 3), stride=1, padding=1),
+        self.conv = []
+
+        self.conv.extend([
+            nn.ReplicationPad2d( (2, 0, 0, 0) ),
+            nn.Conv2d(self.nch, 64, kernel_size=(3, 3), stride=1, padding=0),
+
             nn.BatchNorm2d(num_features=64, eps=0.001, momentum=0.99),
             nn.MaxPool2d(kernel_size=(2, 2)),
             nn.ReLU(),
             nn.Dropout2d(0.5),
+        ])
+        self.fh = (self.fh-(3-1))//2
+        self.fw = self.fw//2
 
-            nn.Conv2d(64, 128, kernel_size=(2, 2), stride=1, padding=1),
+        self.conv.extend([
+            nn.ReplicationPad2d( (2, 0, 0, 0) ),
+            nn.Conv2d(64, 128, kernel_size=(3, 3), stride=1, padding=0),
+
             nn.BatchNorm2d(num_features=128, eps=0.001, momentum=0.99),
             nn.MaxPool2d(kernel_size=(2, 2)),
             nn.ReLU(),
             nn.Dropout2d(0.5),
+        ])
+        self.fh = (self.fh-(3-1))//2
+        self.fw = self.fw//2
 
-            nn.Conv2d(128, 256, kernel_size=(2, 2), stride=1, padding=1),
+        self.conv.extend([
+            nn.ReplicationPad2d( (2, 0, 0, 0) ),
+            nn.Conv2d(128, 256, kernel_size=(3, 3), stride=1, padding=0),
+
             nn.BatchNorm2d(num_features=256, eps=0.001, momentum=0.99),
             nn.MaxPool2d(kernel_size=(2, 2)),
             nn.ReLU(),
             nn.Dropout2d(0.5),
 
+        ])
+        self.fh = (self.fh-(3-1))//2
+        self.fw = self.fw//2
+
+        self.conv.extend([
+            nn.ReplicationPad2d( (2, 0, 0, 0) ),
             #nn.Conv2d(256, 256, kernel_size=(3, 3), stride=2, padding=2),
-            nn.Conv2d(256, 256, kernel_size=(3, 3), stride=1, padding=1),
-            nn.ReLU(),
+            nn.Conv2d(256, 256, kernel_size=(3, 3), stride=1, padding=0),
+
             nn.BatchNorm2d(num_features=256, eps=0.001, momentum=0.99),
-        )
+            nn.ReLU(),
+        ])
+        self.fh = (self.fh-(3-1))
+
+        self.conv = nn.Sequential(*self.conv)
+
         self.fc = nn.Sequential(
             nn.Linear(self.fw*self.fh*256, 512),
             nn.ReLU(),
@@ -49,9 +75,9 @@ class MyModel(nn.Module):
             x = torch.cat((x, xx), dim=1)
         if self.doLog:
             x[:,:2,:,:] = torch.log10(x[:,:2,:,:]/1e-5+1)
+
         x = self.conv(x)
         x = x.view(-1, self.fw*self.fh*256)
         x = self.fc(x)
+
         return x
-
-
