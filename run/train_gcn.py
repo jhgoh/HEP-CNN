@@ -109,6 +109,7 @@ device = 'cpu'
 if torch.cuda.is_available():
     model = model.cuda()
     device = 'cuda'
+    print("CUDA available")
 
 if args.optimizer == 'radam':
     from optimizers.RAdam import RAdam
@@ -166,8 +167,9 @@ try:
         optm.zero_grad()
         for i, data in enumerate(tqdm(trnLoader, desc='epoch %d/%d' % (epoch+1, args.epoch))):
             data = data.to(device)
-            label = data.y
+            label = data.y.float()
             weight = data.weight.float()
+            print(label, weight)
 
             pred = model(data).float()
             crit = torch.nn.BCELoss(weight=weight)
@@ -189,7 +191,7 @@ try:
         val_loss, val_acc = 0., 0.
         for i, data in enumerate(tqdm(valLoader)):
             data = data.to(device)
-            label = data.y
+            label = data.y.float()
             weight = data.weight.float()
 
             pred = model(data)
