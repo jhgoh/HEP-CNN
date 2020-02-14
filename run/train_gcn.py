@@ -109,7 +109,6 @@ device = 'cpu'
 if torch.cuda.is_available():
     model = model.cuda()
     device = 'cuda'
-    print("CUDA available")
 
 if args.optimizer == 'radam':
     from optimizers.RAdam import RAdam
@@ -169,7 +168,6 @@ try:
             data = data.to(device)
             label = data.y.float()
             weight = data.weight.float()
-            print(label, weight)
 
             pred = model(data).float()
             crit = torch.nn.BCELoss(weight=weight)
