@@ -17,6 +17,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--batch', action='store', type=int, default=256, help='Batch size')
 parser.add_argument('-t', '--test', action='store', type=str, required=True, help='Test dataset')
 parser.add_argument('-d', '--input', action='store', type=str, required=True, help='directory with pretrained model parameters')
+parser.add_argument('--model', action='store', choices=('default', 'log3ch', 'log5ch', 'original', 'circpad', 'circpadlog3ch', 'circpadlog5ch'),
+                               default='default', help='choice of model')
 
 args = parser.parse_args()
 
@@ -26,16 +28,29 @@ import pandas as pd
 if not os.path.exists(predFile):
     sys.path.append("../python")
 
-    #from HEPCNN.torch_dataset import HEPCNNSplitedDataset as MyDataset
+    from HEPCNN.torch_dataset_splited import HEPCNNSplitDataset as MySplitDataset
     from HEPCNN.torch_dataset import HEPCNNDataset as MyDataset
 
     kwargs = {'num_workers':min(4, nthreads), 'pin_memory':True}
 
-    testDataset = MyDataset(args.test)
+    if os.path.isdir(args.test):
+        testDataset = MySplitDataset(args.test, nWorkers=nthreads//2)
+    else:
+        testDataset = MyDataset(args.test)
     testLoader = DataLoader(testDataset, batch_size=args.batch, shuffle=False, **kwargs)
 
-    from HEPCNN.torch_model_default import MyModel
-    model = MyModel(testDataset.width, testDataset.height)
+    if os.path.exists(args.input+'/model.pkl'):
+        print("Load saved model from", (args.input+'/model.pkl'))
+        model = torch.load(args.input+'/model.pkl')
+    else:
+        print("Load the model", args.model)
+        if args.model == 'original':
+            from HEPCNN.torch_model_original import MyModel
+        elif 'circpad' in args.model:
+            from HEPCNN.torch_model_circpad import MyModel
+        else:
+            from HEPCNN.torch_model_default import MyModel
+        model = MyModel(testDataset.width, testDataset.height, model=args.model)
 
     device = 'cpu'
     if torch.cuda.is_available():
