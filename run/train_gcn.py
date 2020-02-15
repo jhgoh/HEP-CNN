@@ -87,6 +87,7 @@ valDataset = MyDataset(args.valdata, args.ntest)
 sysstat.update(annotation="read_val")
 
 kwargs = {'num_workers':min(4, nthreads)}
+kwargs = {'num_workers':min(8, nthreads)}
 #if torch.cuda.is_available() and hvd:
 #    kwargs['num_workers'] = 1
 kwargs['pin_memory'] = True
@@ -99,7 +100,7 @@ if hvd:
 else:
     trnLoader = DataLoader(trnDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
     #valLoader = DataLoader(valDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
-    valLoader = DataLoader(valDataset, batch_size=512, shuffle=False, **kwargs)
+    valLoader = DataLoader(valDataset, batch_size=args.batch, shuffle=False, **kwargs)
 
 ## Build model
 from HEPCNN.torch_model_gcn import MyModel

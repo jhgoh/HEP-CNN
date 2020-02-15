@@ -5,6 +5,20 @@ from torch_geometric.data import Dataset as InMemoryDataset
 from torch_geometric.data import Data as PyGData
 from HEPCNN.torch_dataset_splited import HEPCNNSplitDataset
 
+@torch.jit.script
+def fillNodeInfo(image):
+    nx, ny = image.shape[-1], image.shape[-2] ## NCHW
+    poses = torch.zeros([nx*ny, 2])
+    feats = torch.zeros([nx*ny, 3]) ## 3 channel
+    k = 0
+    for iy in range(ny):
+        for ix in range(nx):
+            poses[k][0], poses[k][1] = ix, iy
+            for ii, feat in enumerate(image[:,iy,ix]):
+                feats[k][ii] = feat
+            k += 1
+    return poses, feats
+
 class HEPGCNDataset(InMemoryDataset):
 #class HEPGCNDataset(PyGDataset, HEPCNNSplitDataset):
     def __init__(self, dirName, nEvent=-1, syslogger=None):
@@ -32,16 +46,7 @@ class HEPGCNDataset(InMemoryDataset):
         data = []
         image, label, weight = self.dataset.__getitem__(idx) 
         label = label.to(torch.long)
-        nx, ny = image.shape[-1], image.shape[-2] ## NCHW
-        poses = torch.zeros([nx*ny, 2])
-        feats = torch.zeros([nx*ny, 3]) ## 3 channel
-        k = 0
-        for iy in range(ny):
-            for ix in range(nx):
-                poses[k][0], poses[k][1] = ix, iy
-                for ii, feat in enumerate(image[:,iy,ix]):
-                    feats[k][ii] = feat
-                k += 1
+        poses, feats = fillNodeInfo(image)
         data = PyGData(x=feats, pos=poses, y=label.item())
         data.weight = weight.item()
         return data
