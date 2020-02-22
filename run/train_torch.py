@@ -104,8 +104,8 @@ if hvd:
     valLoader = DataLoader(valDataset, batch_size=args.batch, sampler=valSampler, **kwargs)
 else:
     trnLoader = DataLoader(trnDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
-    #valLoader = DataLoader(valDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
-    valLoader = DataLoader(valDataset, batch_size=512, shuffle=False, **kwargs)
+    batch = 512 if device == 'cuda' else args.batch
+    valLoader = DataLoader(valDataset, batch_size=batch, shuffle=False, **kwargs)
 
 ## Build model
 if args.model == 'original':
