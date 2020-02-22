@@ -104,7 +104,7 @@ if hvd:
     valLoader = DataLoader(valDataset, batch_size=args.batch, sampler=valSampler, **kwargs)
 else:
     trnLoader = DataLoader(trnDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
-    batch = 512 if device == 'cuda' else args.batch
+    batch = args.batch if torch.cuda.is_available() else 512
     valLoader = DataLoader(valDataset, batch_size=batch, shuffle=False, **kwargs)
 
 ## Build model

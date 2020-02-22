@@ -10,7 +10,6 @@ import math
 import torch
 import torch.nn as nn
 import torch.optim as optim
-#from torch.utils.data import DataLoader
 from torch_geometric.data import DataLoader
 
 try:
@@ -99,8 +98,8 @@ if hvd:
     valLoader = DataLoader(valDataset, batch_size=args.batch, sampler=valSampler, **kwargs)
 else:
     trnLoader = DataLoader(trnDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
-    #valLoader = DataLoader(valDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
-    valLoader = DataLoader(valDataset, batch_size=args.batch, shuffle=False, **kwargs)
+    batch = args.batch if torch.cuda.is_available() else 512
+    valLoader = DataLoader(valDataset, batch_size=batch, shuffle=False, **kwargs)
 
 ## Build model
 from HEPCNN.torch_model_gcn import MyModel
@@ -170,7 +169,7 @@ try:
             label = data.y.float()
             weight = data.weight.float()
 
-            pred = model(data).float()
+            pred = model(data)
             crit = torch.nn.BCELoss(weight=weight)
             if device == 'cuda': crit = crit.cuda()
             l = crit(pred.view(-1), label)
@@ -228,15 +227,6 @@ try:
             sysstat.update(annotation="wrote_logs")
 
     sysstat.update(annotation="train_end")
-
-    history['time'] = timeHistory.times[:]
-    with open(trainingFile, 'w') as f:
-        writer = csv.writer(f)
-        keys = history.keys()
-        writer.writerow(keys)
-        for row in zip(*[history[key] for key in keys]):
-            writer.writerow(row)
-    sysstat.update(annotation="wrote_logs")
 
 except KeyboardInterrupt:
     print("Training finished early")
