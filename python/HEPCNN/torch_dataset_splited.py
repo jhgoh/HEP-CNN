@@ -5,14 +5,13 @@ import torch
 from torch.utils.data import Dataset
 from bisect import bisect_right
 from os import listdir
-from queue import Queue
 import concurrent.futures as futures
 
 class HEPCNNSplitDataset(Dataset):
     def __init__(self, dirName, nEvent=-1, **kwargs):
         super(HEPCNNSplitDataset, self).__init__()
         syslogger = kwargs['syslogger'] if 'syslogger' in kwargs else None
-        nWorkers = kwargs['nWorkers'] if 'nWorkers' in kwargs else 4
+        nWorkers = kwargs['nWorkers'] if 'nWorkers' in kwargs else 8
 
         if syslogger: syslogger.update(annotation='open file '+ dirName)
         self.dirName = dirName
@@ -30,12 +29,13 @@ class HEPCNNSplitDataset(Dataset):
             data = h5py.File(self.dirName+'/'+fileName, 'r')
             suffix = "_val" if 'images_val' in data['all_events'] else ""
 
-            images  = data['all_events']['images'+suffix]
-            labels  = data['all_events']['labels'+suffix]
-            weights = data['all_events']['weights'+suffix]
+            images  = (fileName, 'all_events/images'+suffix) ## Keep the filename and image path only, and load them later with multiproc.
+            #images = data['all_events/images'+suffix]
+            labels  = data['all_events/labels'+suffix]
+            weights = data['all_events/weights'+suffix]
 
             if nEvent > 0:
-                images  = images[:nEvent-nEventsTotal]
+                #images  = images[:nEvent-nEventsTotal] ## We'll do this step after (re)loading the images
                 labels  = labels[:nEvent-nEventsTotal]
                 weights = weights[:nEvent-nEventsTotal]
 
@@ -56,7 +56,7 @@ class HEPCNNSplitDataset(Dataset):
         if syslogger: syslogger.update(annotation='Convert images to Tensor')
 
         jobs = []
-        with futures.ThreadPoolExecutor(max_workers=nWorkers) as pool:
+        with futures.ProcessPoolExecutor(max_workers=nWorkers) as pool:
             for fileIdx in range(len(self.maxEventsList)-1):
                 job = pool.submit(self.imageToTensor, fileIdx)
                 jobs.append(job)
@@ -79,8 +79,14 @@ class HEPCNNSplitDataset(Dataset):
             self.imagesList[fileIdx] = images
             self.channel, self.height, self.width = self.shape[1:]
 
+        if nEvent > 0:
+            images  = images[:nEvent-nEventsTotal]
+
     def imageToTensor(self, fileIdx):
-        return fileIdx, torch.Tensor(self.imagesList[fileIdx][()])
+        fileName, imagesName = self.imagesList[fileIdx]
+        data = h5py.File(self.dirName+'/'+fileName, 'r')
+        images = data[imagesName]
+        return fileIdx, torch.Tensor(images[()])
 
     def __getitem__(self, idx):
         fileIdx = bisect_right(self.maxEventsList, idx)-1

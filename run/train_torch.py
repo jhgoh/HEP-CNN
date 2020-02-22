@@ -49,6 +49,7 @@ if hvd:
     #torch.cuda.set_device(hvd.local_rank())
 
 if not os.path.exists(args.outdir): os.makedirs(args.outdir)
+modelFile = os.path.join(args.outdir, 'model.pkl')
 weightFile = os.path.join(args.outdir, 'weight_%d.pkl' % hvd_rank)
 predFile = os.path.join(args.outdir, 'predict_%d.npy' % hvd_rank)
 trainingFile = os.path.join(args.outdir, 'history_%d.csv' % hvd_rank)
@@ -79,14 +80,14 @@ from HEPCNN.torch_dataset import HEPCNNDataset as MyDataset
 
 sysstat.update(annotation="open_trn")
 if os.path.isdir(args.trndata):
-    trnDataset = MySplitDataset(args.trndata, args.ntrain, syslogger=sysstat)
+    trnDataset = MySplitDataset(args.trndata, args.ntrain, nWorkers=nthreads//2, syslogger=sysstat)
 else:
     trnDataset = MyDataset(args.trndata, args.ntrain, syslogger=sysstat)
 sysstat.update(annotation="read_trn")
 
 sysstat.update(annotation="open_val")
 if os.path.isdir(args.valdata):
-    valDataset = MySplitDataset(args.valdata, args.ntest, syslogger=sysstat)
+    valDataset = MySplitDataset(args.valdata, args.ntest, nWorkers=nthreads//2, syslogger=sysstat)
 else:
     valDataset = MyDataset(args.valdata, args.ntest, syslogger=sysstat)
 sysstat.update(annotation="read_val")
@@ -103,8 +104,8 @@ if hvd:
     valLoader = DataLoader(valDataset, batch_size=args.batch, sampler=valSampler, **kwargs)
 else:
     trnLoader = DataLoader(trnDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
-    #valLoader = DataLoader(valDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
-    valLoader = DataLoader(valDataset, batch_size=512, shuffle=False, **kwargs)
+    batch = args.batch if torch.cuda.is_available() else 512
+    valLoader = DataLoader(valDataset, batch_size=batch, shuffle=False, **kwargs)
 
 ## Build model
 if args.model == 'original':
@@ -114,6 +115,7 @@ elif 'circpad' in args.model:
 else:
     from HEPCNN.torch_model_default import MyModel
 model = MyModel(trnDataset.width, trnDataset.height, model=args.model)
+if hvd_rank == 0: torch.save(model, modelFile)
 device = 'cpu'
 if torch.cuda.is_available():
     model = model.cuda()

@@ -10,7 +10,16 @@ import math
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch_geometric.data import DataLoader
+
+try:
+    import horovod.torch as hvd
+except:
+    hvd = None
+
+nthreads = int(os.popen('nproc').read()) ## nproc takes allowed # of processes. Returns OMP_NUM_THREADS if set
+print("NTHREADS=", nthreads, "CPU_COUNT=", os.cpu_count())
+torch.set_num_threads(nthreads)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', action='store', type=int, default=50, help='Number of epochs')
@@ -23,17 +32,24 @@ parser.add_argument('-o', '--outdir', action='store', type=str, required=True, h
 parser.add_argument('--lr', action='store', type=float, default=1e-3, help='Learning rate')
 parser.add_argument('--noEarlyStopping', action='store_true', help='do not apply Early Stopping')
 parser.add_argument('--batchPerStep', action='store', type=int, default=1, help='Number of batches per step (to emulate all-reduce)')
-
-nthreads = int(os.popen('nproc').read()) ## nproc takes allowed # of processes. Returns OMP_NUM_THREADS if set
-print("NTHREADS=", nthreads, "CPU_COUNT=", os.cpu_count())
-torch.set_num_threads(nthreads)
+parser.add_argument('--shuffle', action='store', type=bool, default=True, help='Shuffle batches for each epochs')
+parser.add_argument('--optimizer', action='store', choices=('sgd', 'adam', 'radam', 'ranger'), default='adam', help='optimizer to run')
+parser.add_argument('--model', action='store', choices=('default', 'log3ch', 'log5ch', 'original', 'circpad', 'circpadlog3ch', 'circpadlog5ch'), 
+                               default='default', help='choice of model')
 
 args = parser.parse_args()
 
-hvd = None
-hvd_rank = 0
+hvd_rank, hvd_size = 0, 1
+if hvd:
+    hvd.init()
+    hvd_rank = hvd.rank()
+    hvd_size = hvd.size()
+    print("Horovod is available. (rank=%d size=%d)" % (hvd_rank, hvd_size))
+    #torch.manual_seed(args.seed)
+    #torch.cuda.set_device(hvd.local_rank())
 
 if not os.path.exists(args.outdir): os.makedirs(args.outdir)
+modelFile = os.path.join(args.outdir, 'model.pkl')
 weightFile = os.path.join(args.outdir, 'weight_%d.pkl' % hvd_rank)
 predFile = os.path.join(args.outdir, 'predict_%d.npy' % hvd_rank)
 trainingFile = os.path.join(args.outdir, 'history_%d.csv' % hvd_rank)
@@ -59,7 +75,7 @@ sysstat = SysStat(os.getpid(), fileName=resourceByCPFile)
 sysstat.update(annotation="start_loggin")
 
 sys.path.append("../python")
-from HEPCNN.torch_dataset import HEPGCNDataset as MyDataset
+from HEPCNN.torch_dataset_gcn import HEPGCNDataset as MyDataset
 
 sysstat.update(annotation="open_trn")
 trnDataset = MyDataset(args.trndata, args.ntrain)
@@ -70,24 +86,45 @@ valDataset = MyDataset(args.valdata, args.ntest)
 sysstat.update(annotation="read_val")
 
 kwargs = {'num_workers':min(4, nthreads)}
-if torch.cuda.is_available() and hvd:
-    kwargs['num_workers'] = 1
+kwargs = {'num_workers':min(8, nthreads)}
+#if torch.cuda.is_available() and hvd:
+#    kwargs['num_workers'] = 1
 kwargs['pin_memory'] = True
 
-trnLoader = DataLoader(trnDataset, batch_size=args.batch, shuffle=False, collate_fn=trnDataset.collate, **kwargs)
-#valLoader = DataLoader(valDataset, batch_size=args.batch, shuffle=False, **kwargs)
-valLoader = DataLoader(valDataset, batch_size=512, shuffle=False, collate_fn=valDataset.collate, **kwargs)
+if hvd:
+    trnSampler = torch.utils.data.distributed.DistributedSampler(trnDataset, num_replicas=hvd_size, rank=hvd_rank)
+    valSampler = torch.utils.data.distributed.DistributedSampler(valDataset, num_replicas=hvd_size, rank=hvd_rank)
+    trnLoader = DataLoader(trnDataset, batch_size=args.batch, sampler=trnSampler, **kwargs)
+    valLoader = DataLoader(valDataset, batch_size=args.batch, sampler=valSampler, **kwargs)
+else:
+    trnLoader = DataLoader(trnDataset, batch_size=args.batch, shuffle=args.shuffle, **kwargs)
+    batch = args.batch if torch.cuda.is_available() else 512
+    valLoader = DataLoader(valDataset, batch_size=batch, shuffle=False, **kwargs)
 
 ## Build model
 from HEPCNN.torch_model_gcn import MyModel
-model = MyModel(trnDataset.width, trnDataset.height)
-#optm = optim.Adam(model.parameters(), lr=args.lr*hvd_size)
-optm = optim.Adam(model.parameters(), lr=args.lr)
-
+model = MyModel()
+if hvd_rank == 0: torch.save(model, modelFile)
 device = 'cpu'
-#if torch.cuda.is_available():
-#    model = model.cuda()
-#    device = 'cuda'
+if torch.cuda.is_available():
+    model = model.cuda()
+    device = 'cuda'
+
+if args.optimizer == 'radam':
+    from optimizers.RAdam import RAdam
+    optm = RAdam(model.parameters(), lr=args.lr)
+elif args.optimizer == 'ranger':
+    from optimizers.RAdam import RAdam
+    from optimizers.Lookahead import Lookahead
+    optm_base = RAdam(model.parameters(), lr=args.lr)
+    optm = Lookahead(optm_base)
+elif args.optimizer == 'adam':
+    optm = optim.Adam(model.parameters(), lr=args.lr)
+elif args.optimizer == 'sgd':
+    optm = optim.SGD(model.parameters(), lr=args.lr)
+else:
+    print("Cannot find optimizer in the list")
+    exit()
 
 if hvd:
     compression = hvd.Compression.none
@@ -105,92 +142,91 @@ def metric_average(val, name):
 
 sysstat.update(annotation="modelsetup_done")
 
+with open(args.outdir+'/summary.txt', 'w') as fout:
+    fout.write(str(args))
+    fout.write('\n\n')
+    fout.write(str(model))
+    fout.close()
+
 from tqdm import tqdm
 from sklearn.metrics import accuracy_score
 bestModel, bestAcc = {}, -1
-if not os.path.exists(weightFile):
-    try:
-        timeHistory = TimeHistory()
-        timeHistory.on_train_begin()
-        sysstat.update(annotation="train_start")
-        history = {'time':[], 'loss':[], 'acc':[], 'val_loss':[], 'val_acc':[]}
+try:
+    timeHistory = TimeHistory()
+    timeHistory.on_train_begin()
+    sysstat.update(annotation="train_start")
+    history = {'time':[], 'loss':[], 'acc':[], 'val_loss':[], 'val_acc':[]}
 
-        for epoch in range(args.epoch):
-            timeHistory.on_epoch_begin()
-            sysstat.update(annotation='epoch_begin')
+    for epoch in range(args.epoch):
+        timeHistory.on_epoch_begin()
+        sysstat.update(annotation='epoch_begin')
 
-            model.train()
-            trn_loss, trn_acc = 0., 0.
-            loss = None
-            for i, (data, label, weight) in enumerate(tqdm(trnLoader, desc='epoch %d/%d' % (epoch+1, args.epoch))):
-                #data = data.to(device)
-                #weight = weight.float()
+        model.train()
+        trn_loss, trn_acc = 0., 0.
+        optm.zero_grad()
+        for i, data in enumerate(tqdm(trnLoader, desc='epoch %d/%d' % (epoch+1, args.epoch))):
+            data = data.to(device)
+            label = data.y.float()
+            weight = data.weight.float()
 
+            pred = model(data)
+            crit = torch.nn.BCELoss(weight=weight)
+            if device == 'cuda': crit = crit.cuda()
+            l = crit(pred.view(-1), label)
+            l.backward()
+            if i % args.batchPerStep == 0 or i+1 == len(trnLoader):
+                optm.step()
                 optm.zero_grad()
-                pred = model(data).float()
-                crit = torch.nn.BCELoss()#weight=weight)
-                l = crit(pred.view(-1), label.float()).to('cpu')
-                l.backward()
-                if loss is None: loss = l
-                else: loss += l
-                if i % args.batchPerStep == 0 or i+1 == len(trnLoader):
-                    #loss.backward()
-                    optm.step()
 
-                trn_loss += l.item()
-                trn_acc += accuracy_score(label, np.where(pred > 0.5, 1, 0))
+            trn_loss += l.item()
+            trn_acc += accuracy_score(label.to('cpu'), np.where(pred.to('cpu') > 0.5, 1, 0))
 
-                sysstat.update()
-            trn_loss /= len(trnSampler) if hvd else (i+1)
-            trn_acc  /= len(trnSampler) if hvd else (i+1)
+            sysstat.update()
+        trn_loss /= len(trnLoader)
+        trn_acc  /= len(trnLoader)
 
-            model.eval()
-            val_loss, val_acc = 0., 0.
-            for i, (data, label, weight) in enumerate(tqdm(valLoader)):
-                #data = data.to(device)
-                #weight = weight.float()
+        model.eval()
+        val_loss, val_acc = 0., 0.
+        for i, data in enumerate(tqdm(valLoader)):
+            data = data.to(device)
+            label = data.y.float()
+            weight = data.weight.float()
 
-                pred = model(data)
-                crit = torch.nn.BCELoss()#weight=weight)
-                loss = crit(pred.view(-1), label.float())
+            pred = model(data)
+            crit = torch.nn.BCELoss(weight=weight)
+            loss = crit(pred.view(-1), label)
 
-                val_loss += loss.item()
-                val_acc += accuracy_score(label, np.where(pred > 0.5, 1, 0))
-            val_loss /= len(valSampler) if hvd else (i+1)
-            val_acc  /= len(valSampler) if hvd else (i+1)
+            val_loss += loss.item()
+            val_acc += accuracy_score(label.to('cpu'), np.where(pred.to('cpu') > 0.5, 1, 0))
+        val_loss /= len(valLoader)
+        val_acc  /= len(valLoader)
 
-            if hvd: val_acc = metric_average(val_acc, 'avg_accuracy')
-            if bestAcc < val_acc:
-                bestModel = model.state_dict()
-                bestAcc = val_acc
+        if hvd: val_acc = metric_average(val_acc, 'avg_accuracy')
+        if bestAcc < val_acc:
+            bestModel = model.state_dict()
+            bestAcc = val_acc
+            if hvd_rank == 0:
+                torch.save(bestModel, weightFile)
+                sysstat.update(annotation="saved_model")
 
-            timeHistory.on_epoch_end()
-            sysstat.update(annotation='epoch_end')
-            history['loss'].append(trn_loss)
-            history['acc'].append(trn_acc)
-            history['val_loss'].append(val_loss)
-            history['val_acc'].append(val_acc)
+        timeHistory.on_epoch_end()
+        sysstat.update(annotation='epoch_end')
+        history['loss'].append(trn_loss)
+        history['acc'].append(trn_acc)
+        history['val_loss'].append(val_loss)
+        history['val_acc'].append(val_acc)
 
-        sysstat.update(annotation="train_end")
+        history['time'].append(timeHistory.times[-1])
+        if hvd_rank == 0:
+            with open(trainingFile, 'w') as f:
+                writer = csv.writer(f)
+                keys = history.keys()
+                writer.writerow(keys)
+                for row in zip(*[history[key] for key in keys]):
+                    writer.writerow(row)
+            sysstat.update(annotation="wrote_logs")
 
-        history['time'] = timeHistory.times[:]
-        with open(trainingFile, 'w') as f:
-            writer = csv.writer(f)
-            keys = history.keys()
-            writer.writerow(keys)
-            for row in zip(*[history[key] for key in keys]):
-                writer.writerow(row)
-        sysstat.update(annotation="wrote_logs")
+    sysstat.update(annotation="train_end")
 
-    except KeyboardInterrupt:
-        print("Training finished early")
-
-if hvd_rank == 0:
-    torch.save(bestModel, weightFile)
-
-    model.load_state_dict(torch.load(weightFile))
-    model.eval()
-    #pred = model(valDataset.images.to(device))
-
-    #np.save(predFile, pred.to('cpu').detach().numpy())
-    sysstat.update(annotation="saved_model")
+except KeyboardInterrupt:
+    print("Training finished early")

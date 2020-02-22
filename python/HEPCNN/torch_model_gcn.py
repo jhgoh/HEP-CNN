@@ -1,46 +1,51 @@
 #!/usr/bin/env python
 import torch
 import torch.nn as nn
-
-import dgl
-import dgl.function as fn
 import torch.nn.functional as F
-from dgl import DGLGraph
-from dgl.nn.pytorch.conv import GraphConv
+
+import torch_geometric.nn as PyG
+
+def MLP(channels, batch_norm=True):
+    return nn.Sequential(*[
+        nn.Sequential(nn.Linear(channels[i - 1], channels[i]), nn.ReLU(), nn.BatchNorm1d(channels[i]))
+        for i in range(1, len(channels))
+    ])
+
+class PointDynamicEdgeConv(PyG.EdgeConv):
+    def __init__(self, nn, k, aggr='max', **kwargs):
+        super(PointDynamicEdgeConv, self).__init__(nn=nn, aggr=aggr, **kwargs)
+        self.k = k
+
+    def forward(self, x, pos, batch=None):
+        edge_index = PyG.knn_graph(pos, self.k, batch, loop=False, flow=self.flow)
+        return super(PointDynamicEdgeConv, self).forward(x, edge_index)
+
+    def __repr__(self):
+        return '{}(nn={}, k={})'.format(self.__class__.__name__, self.nn,
+                                        self.k)
 
 class MyModel(nn.Module):
-    def __init__(self, width, height, nchannel=3):
+    def __init__(self):
         super(MyModel, self).__init__()
+        self.nChannel = 3
 
-        self.gc1 = GraphConv(3, 64, activation=F.relu)
-        self.gc2 = GraphConv(64, 256, activation=F.relu)
-        self.gc3 = GraphConv(256, 256, activation=F.relu)
+        self.conv1 = PointDynamicEdgeConv(MLP([self.nChannel+3, 64, 64, 64]), 8, 'max')
+        self.conv2 = PyG.DynamicEdgeConv(MLP([2 * 64, 128]), 8, 'max')
+
+        self.lin1 = MLP([128 + 64, 1024])
 
         self.fc = nn.Sequential(
-            nn.Linear(64*width*height,1),
-            #nn.Linear(width*height,1),
+            nn.Linear(1024, 512), nn.ReLU(), nn.BatchNorm1d(512), nn.Dropout(0.5),
+            nn.Linear( 512, 256), nn.ReLU(), nn.BatchNorm1d(256), nn.Dropout(0.5),
+            nn.Linear(256, 1),
             nn.Sigmoid(),
         )
 
-    def forward(self, grps):
-        x = []
-        for g in dgl.unbatch(grps):
-            hcal, ecal, trck = g.ndata['hcal'], g.ndata['ecal'], g.ndata['trck']
-            xx = torch.cat([hcal, ecal, trck]).view(3,-1).permute(1,0)
-            xx = self.gc1(g, xx)
-            x.append(xx)
-        x = torch.cat(x).view(grps.batch_size,-1)
-
-        #batch_size = grps.batch_size
-        #hcals, ecals, trcks = grps.ndata['hcal'], grps.ndata['ecal'], grps.ndata['trck']
-        #l = hcals.shape[-1]//batch_size
-        #x = torch.cat([hcals, ecals, trcks]) ## this makes CN(HW)
-        #x = x.view(3,-1,l).permute(1,0,2) ## convert back to NC(HW)
-        #x = x.reshape(-1,3*l) ## convert back to NC(HW)
-        #print(x.view(-1).shape)
-
-        #x = self.gc1(grps, hcals.view(-1))
-        #print(x.shape)
-        x = self.fc(x)
-
-        return x
+    def forward(self, data):
+        x, pos, batch = data.x, data.pos, data.batch
+        x1 = self.conv1(x, pos, batch)
+        x2 = self.conv2(x1, batch)
+        out = self.lin1(torch.cat([x1, x2], dim=1))
+        out = PyG.global_max_pool(out, batch)
+        out = self.fc(out)
+        return out

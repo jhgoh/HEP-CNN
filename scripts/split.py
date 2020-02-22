@@ -31,6 +31,7 @@ for i, begin in enumerate(range(0, nEventsTotal, args.nevent)):
         g = outFile.create_group('all_events')
         kwargs = {} if args.nocompress else {'compression':'gzip', 'compression_opts':9}
         image = images[begin:end]
+        chunkSize = min(chunkSize, image.shape[0])
         g.create_dataset('images'+suffix, data=image, chunks=((chunkSize,)+image.shape[1:]), **kwargs)
         g.create_dataset('labels'+suffix, data=labels[begin:end], chunks=(chunkSize,))
         g.create_dataset('weights'+suffix, data=weights[begin:end], chunks=(chunkSize,))
