@@ -3,9 +3,6 @@ import numpy as np
 import h5py
 import torch
 from torch.utils.data import Dataset
-import dgl
-from dgl import DGLGraph
-from copy import deepcopy
 
 class HEPCNNDataset(Dataset):
     def __init__(self, fileName, nEvent=-1, syslogger=None):
