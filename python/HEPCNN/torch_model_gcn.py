@@ -11,43 +11,49 @@ def MLP(channels, batch_norm=True):
         for i in range(1, len(channels))
     ])
 
-class PointDynamicEdgeConv(PyG.EdgeConv):
-    def __init__(self, nn, k, aggr='max', **kwargs):
-        super(PointDynamicEdgeConv, self).__init__(nn=nn, aggr=aggr, **kwargs)
+class PointConvNet(nn.Module):
+    def __init__(self, net, k, **kwargs):
+        super(PointConvNet, self).__init__()
         self.k = k
+        self.conv = PyG.PointConv(net)
 
     def forward(self, x, pos, batch=None):
-        edge_index = PyG.knn_graph(pos, self.k, batch, loop=False, flow=self.flow)
-        return super(PointDynamicEdgeConv, self).forward(x, edge_index)
+        edge_index = PyG.knn_graph(pos, self.k, batch, loop=False, flow='source_to_target')
+        x = self.conv(x, pos, edge_index)
+        return x, pos, batch
 
-    def __repr__(self):
-        return '{}(nn={}, k={})'.format(self.__class__.__name__, self.nn,
-                                        self.k)
+class PoolingNet(nn.Module):
+    def __init__(self, net):
+        super(PoolingNet, self).__init__()
+        self.net = net
+
+    def forward(self, x, pos, batch):
+        x = self.net(torch.cat([x, pos], dim=1))
+        x = PyG.global_max_pool(x, batch)
+        pos = pos.new_zeros((x.size(0), 3))
+        batch = torch.arange(x.size(0), device=batch.device)
+        return x, pos, batch
 
 class MyModel(nn.Module):
     def __init__(self):
         super(MyModel, self).__init__()
         self.nChannel = 3
 
-        self.conv1 = PointDynamicEdgeConv(MLP([self.nChannel+3, 64, 128]), 8, 'max')
-        self.conv2 = PyG.DynamicEdgeConv(MLP([2 * 128, 256]), 4, 'max')
-        self.conv3 = PyG.DynamicEdgeConv(MLP([2 * 256, 512]), 4, 'max')
-
-        self.lin1 = MLP([512 + 256 + 128, 1024])
+        self.conv1 = PointConvNet(MLP([self.nChannel+3, 64, 64, 128]), 8)
+        self.conv2 = PointConvNet(MLP([3+128, 128, 128, 256]), 4)
+        self.pool = PoolingNet(MLP([256 + 3, 256, 512, 1024]))
 
         self.fc = nn.Sequential(
             nn.Linear(1024, 512), nn.ReLU(), nn.BatchNorm1d(512), nn.Dropout(0.5),
             nn.Linear( 512, 256), nn.ReLU(), nn.BatchNorm1d(256), nn.Dropout(0.5),
-            nn.Linear(256, 1),
+            nn.Linear( 256,   1),
             nn.Sigmoid(),
         )
 
     def forward(self, data):
         x, pos, batch = data.x, data.pos, data.batch
-        x1 = self.conv1(x, pos, batch)
-        x2 = self.conv2(x1, batch)
-        x3 = self.conv3(x2, batch)
-        out = self.lin1(torch.cat([x1, x2, x3], dim=1))
-        out = PyG.global_max_pool(out, batch)
-        out = self.fc(out)
+        x, pos, batch = self.conv1(x, pos, batch)
+        x, pos, batch = self.conv2(x, pos, batch)
+        x, pos, batch = self.pool(x, pos, batch)
+        out = self.fc(x)
         return out
