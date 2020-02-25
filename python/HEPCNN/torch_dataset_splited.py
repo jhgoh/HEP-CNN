@@ -4,7 +4,7 @@ import h5py
 import torch
 from torch.utils.data import Dataset
 from bisect import bisect_right
-from os import listdir
+from os import listdir, environ
 import concurrent.futures as futures
 
 class HEPCNNSplitDataset(Dataset):
@@ -55,6 +55,8 @@ class HEPCNNSplitDataset(Dataset):
 
         if syslogger: syslogger.update(annotation='Convert images to Tensor')
 
+        env_kmp = environ['KMP_AFFINITY'] if 'KMP_AFFINITY' in environ else None
+        environ['KMP_AFFINITY'] = 'none'
         jobs = []
         with futures.ProcessPoolExecutor(max_workers=nWorkers) as pool:
             for fileIdx in range(len(self.maxEventsList)-1):
@@ -64,6 +66,7 @@ class HEPCNNSplitDataset(Dataset):
             for job in futures.as_completed(jobs):
                 fileIdx, images = job.result()
                 self.imagesList[fileIdx] = images
+        if env_kmp != None: environ['KMP_AFFINITY'] = env_kmp
 
         for fileIdx in range(len(self.maxEventsList)-1):
             #images  = torch.Tensor(self.imagesList[fileIdx][()])

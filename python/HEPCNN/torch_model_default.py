@@ -5,8 +5,8 @@ import torch.nn as nn
 class MyModel(nn.Module):
     def __init__(self, width, height, model='default'):
         super(MyModel, self).__init__()
-        self.fw = int(width/2/2/2)
-        self.fh = int(height/2/2/2)
+        self.fw = width//2//2//2
+        self.fh = height//2//2//2
 
         self.nch = 5 if '5ch' in model else 3
         self.doLog = ('log' in model)

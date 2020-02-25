@@ -13,27 +13,33 @@ class MyModel(nn.Module):
 
         self.conv.extend([
             nn.Conv2d(self.nch, 64, kernel_size=(3, 3), stride=1, padding=1),
+            nn.MaxPool2d(kernel_size=(2, 2)),
             nn.ReLU(),
         ])
-        #self.fw, self.fh = self.fw, self.fh
-        
+        self.fw, self.fh = self.fw//2, self.fh//2
+
         self.conv.extend([
             nn.Conv2d(64, 128, kernel_size=(3, 3), stride=2, padding=1),
+            nn.MaxPool2d(kernel_size=(2, 2)),
             nn.ReLU(),
         ])
+        self.fw, self.fh = (self.fw)//2, (self.fh)//2
         self.fw, self.fh = (self.fw)//2, (self.fh)//2
 
         self.conv.extend([
             nn.Conv2d(128, 256, kernel_size=(3, 3), stride=1, padding=1),
-            nn.Dropout2d(0.5),
-        ])
-        #self.fw, self.fh = self.fw, self.fh
-
-        self.conv.extend([
-            nn.Conv2d(256, 256, kernel_size=(3, 3), stride=2, padding=1),
+            nn.MaxPool2d(kernel_size=(2, 2)),
             nn.ReLU(),
         ])
-        self.fw, self.fh = (self.fw)//2, (self.fh)//2
+        self.fw, self.fh = self.fw//2, self.fh//2
+
+        if width > 128:
+            self.conv.extend([
+                nn.Conv2d(256, 256, kernel_size=(3, 3), stride=2, padding=1),
+                nn.MaxPool2d(kernel_size=(2, 2)),
+                nn.ReLU(),
+            ])
+            self.fw, self.fh = (self.fw)//2, (self.fh)//2
 
         self.conv = nn.Sequential(*self.conv)
 
