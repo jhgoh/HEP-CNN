@@ -40,21 +40,21 @@ class MyModel(nn.Module):
         super(MyModel, self).__init__()
         self.nChannel = 3
 
-        self.conv1 = PointConvNet(MLP([self.nChannel+3, 64, 64, 256]), 0.2)
-        #self.conv2 = PointConvNet(MLP([3+128, 128, 128, 256]), 0.2)
+        self.conv1 = PointConvNet(MLP([self.nChannel+3, 64, 64, 128]), 0.2)
+        self.conv2 = PointConvNet(MLP([3+128, 128, 128, 256]), 0.2)
         self.pool = PoolingNet(MLP([256 + 3, 256, 512, 1024]))
 
         self.fc = nn.Sequential(
-            nn.Linear(1024, 256), nn.ReLU(), nn.BatchNorm1d(256), nn.Dropout(0.5),
-            #nn.Linear( 512, 256), nn.ReLU(), nn.BatchNorm1d(256), nn.Dropout(0.5),
+            nn.Linear(1024, 512), nn.ReLU(), nn.BatchNorm1d(512), nn.Dropout(0.5),
+            nn.Linear( 512, 256), nn.ReLU(), nn.BatchNorm1d(256), nn.Dropout(0.5),
             nn.Linear( 256,   1),
-            nn.Sigmoid(),
+            #nn.Sigmoid(),
         )
 
     def forward(self, data):
         x, pos, batch = data.x, data.pos, data.batch
         x, pos, batch = self.conv1(x, pos, batch)
-        #x, pos, batch = self.conv2(x, pos, batch)
+        x, pos, batch = self.conv2(x, pos, batch)
         x, pos, batch = self.pool(x, pos, batch)
         out = self.fc(x)
         return out
