@@ -40,7 +40,7 @@ class MyModel(nn.Module):
             nn.ReLU(),
             nn.Dropout2d(0.5),
             nn.Linear(512, 1),
-            nn.Sigmoid(),
+            #nn.Sigmoid(),
         )
 
     def forward(self, x):
