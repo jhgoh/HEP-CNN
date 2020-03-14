@@ -32,16 +32,16 @@ class HEPGCNDataset(InMemoryDataset):
         self.width = self.dataset.width
         self.height = self.dataset.height
 
+        ## The image will be NCHW, [batch][detector][phi][eta]
         phis = np.arange(0, 2*pi, 2*pi/self.width)+(2*pi/self.width/2)
         etas = np.arange(-2.5, 2.5, (2.5+2.5)/self.height)+(2.5+2.5)/self.height/2
-        self.poses0 = torch.zeros([self.width, self.height, 3])
-        r0 = 1
-        for iy, eta in enumerate(etas):
-            for ix, phi in enumerate(phis):
+        self.poses0 = torch.zeros([self.width, self.height, 3], requires_grad=False)
+        r0 = 1.317 ## scale radius to have 2*r0*sin(dphi/2) = deta. r0=1.317 for deta=2.5 and r0->1 for small deta
+        for i, phi in enumerate(phis):
+            for j, eta in enumerate(etas):
                 x, y = r0*cos(phi), r0*sin(phi)
-                z = r0*sinh(eta)
-                self.poses0[iy,ix] = torch.tensor([x,y,z])
-        #self.poses0 = self.poses0.view(-1,3)
+                z = eta
+                self.poses0[i,j] = torch.tensor([x,y,z], requires_grad=False)
 
     @property
     def raw_file_names(self):
@@ -69,7 +69,7 @@ class HEPGCNDataset(InMemoryDataset):
         poses = torch.zeros([np, 3], requires_grad=False)
         feats = torch.zeros([np, 3], requires_grad=False)
         for i, idx in enumerate(idxs):
-            poses[i] = self.poses0[idx[0],idx[1]]
+            poses[i] = self.poses0[idx[0],idx[1],]
             feats[i] = image[:,idx[0],idx[1]]
         #poses, feats = fillNodeInfo(idxs, image, self.poses0)
 
