@@ -6,14 +6,14 @@ import sys, os
 plt.rcParams['lines.linewidth'] = 1
 plt.rcParams['lines.markersize'] = 5
 plt.rcParams["legend.loc"] = 'upper right'
+plt.rcParams["legend.frameon"] = False
+plt.rcParams["legend.loc"] = 'upper left'
 
-plt.rcParams['figure.figsize'] = (4*3, 3.5*2)
-ax1 = plt.subplot(2, 3, 1, yscale='log', ylabel='Loss(train)', xlabel='epoch')
-ax2 = plt.subplot(2, 3, 2, yscale='log', ylabel='Loss(val)', xlabel='epoch')
-#ax1 = plt.subplot(2, 3, 1, ylabel='Loss(train)')
-#ax2 = plt.subplot(2, 3, 2, ylabel='Loss(val)')
-ax3 = plt.subplot(2, 3, 4, ylabel='Accuracy(train)', xlabel='epoch')
-ax4 = plt.subplot(2, 3, 5, ylabel='Accuracy(val)', xlabel='epoch')
+plt.rcParams['figure.figsize'] = (4*2, 3.5*3)
+ax1 = plt.subplot(3, 2, 1, yscale='log', ylabel='Loss(train)', xlabel='epoch')
+ax2 = plt.subplot(3, 2, 2, yscale='log', ylabel='Loss(val)', xlabel='epoch')
+ax3 = plt.subplot(3, 2, 3, ylabel='Accuracy(train)', xlabel='epoch')
+ax4 = plt.subplot(3, 2, 4, ylabel='Accuracy(val)', xlabel='epoch')
 ax1.set_ylim([3e-2,1])
 ax2.set_ylim([3e-2,1])
 ax3.set_ylim([0.85,1])
@@ -37,7 +37,7 @@ for d in sys.argv[1:]:
     lines.append(l[0])
     labels.append(label)
 
-ax5 = plt.subplot(1,3,3)
+ax5 = plt.subplot(3,1,3)
 ax5.legend(lines, labels)
 ax5.axis('off')
 
