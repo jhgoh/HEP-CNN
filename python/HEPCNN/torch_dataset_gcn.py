@@ -36,10 +36,9 @@ class HEPGCNDataset(InMemoryDataset):
         phis = np.arange(0, 2*pi, 2*pi/self.width)+(2*pi/self.width/2)
         etas = np.arange(-2.5, 2.5, (2.5+2.5)/self.height)+(2.5+2.5)/self.height/2
         self.poses0 = torch.zeros([self.width, self.height, 3], requires_grad=False)
-        r0 = 1.317 ## scale radius to have 2*r0*sin(dphi/2) = deta. r0=1.317 for deta=2.5 and r0->1 for small deta
         for i, phi in enumerate(phis):
             for j, eta in enumerate(etas):
-                x, y = r0*cos(phi), r0*sin(phi)
+                x, y = cos(phi), sin(phi)
                 z = eta
                 self.poses0[i,j] = torch.tensor([x,y,z], requires_grad=False)
 
