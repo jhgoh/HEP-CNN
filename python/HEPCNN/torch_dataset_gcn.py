@@ -23,21 +23,23 @@ def fillNodeInfo(idxs, image, poses0):
 
 class HEPGCNDataset(InMemoryDataset):
 #class HEPGCNDataset(PyGDataset, HEPCNNSplitDataset):
-    def __init__(self, dirName, nEvent=-1, syslogger=None):
+    def __init__(self, dirName, nEvent=-1, syslogger=None, **kwargs):
         super(HEPGCNDataset, self).__init__('/')
         if dirName.endswith('.h5'):
             self.dataset = HEPCNNDataset(dirName, nEvent, syslogger=syslogger)
         else:
-            self.dataset = HEPCNNSplitDataset(dirName, nEvent, nWorkers=8, syslogger=syslogger)
+            nWorkers = 8 if 'nWorkers' not in kwargs else kwargs['nWorkers']
+            self.dataset = HEPCNNSplitDataset(dirName, nEvent, nWorkers=nWorkers, syslogger=syslogger)
         self.width = self.dataset.width
         self.height = self.dataset.height
 
         ## The image will be NCHW, [batch][detector][phi][eta]
-        phis = np.arange(0, 2*pi, 2*pi/self.width)+(2*pi/self.width/2)
+        pi_ = 3.15 # original image is [-3.15,3.15]
+        phis = np.arange(0, 2*pi_, 2*pi_/self.width)+(2*pi_/self.width/2)
         etas = np.arange(-2.5, 2.5, (2.5+2.5)/self.height)+(2.5+2.5)/self.height/2
         self.poses0 = torch.zeros([self.width, self.height, 3], requires_grad=False)
-        for i, phi in enumerate(phis):
-            for j, eta in enumerate(etas):
+        for j, phi in enumerate(phis):
+            for i, eta in enumerate(etas):
                 x, y = cos(phi), sin(phi)
                 z = eta
                 self.poses0[i,j] = torch.tensor([x,y,z], requires_grad=False)
