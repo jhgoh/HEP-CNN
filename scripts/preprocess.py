@@ -25,6 +25,8 @@ if not args.output.endswith('.h5'): outPrefix, outSuffix = args.output+'/data', 
 else: outPrefix, outSuffix = args.output.rsplit('.', 1)
 args.nevent = max(args.nevent, -1) ## nevent should be -1 to process everything or give specific value
 precision = 'f%d' % (args.precision//8)
+dtypes = {64:np.float64, 32:np.float32, 16:np.float16, 8:np.float8}
+img_dtype = dtypes[args.precision]
 
 ## Logic for the arguments regarding on splitting
 ##   split off: we will simply ignore nfiles parameter => reset nfiles=1
@@ -72,9 +74,9 @@ for iSrcFile, (nEvent0, srcFileName) in enumerate(zip(nEvent0s, srcFileNames)):
     weights = data['weight']
     labels = data['y'] if 'y' in data else np.ones(weights.shape[0])
 
-    image_h = data['hist']
-    image_e = data['histEM']
-    image_t = data['histtrack']
+    image_h = data['hist'][()].astype(img_dtype)
+    image_e = data['histEM'][()].astype(img_dtype)
+    image_t = data['histtrack'][()].astype(img_dtype)
 
     ## Preprocess image
     #image_e /= np.max(image_e)
@@ -107,7 +109,7 @@ for iSrcFile, (nEvent0, srcFileName) in enumerate(zip(nEvent0s, srcFileNames)):
             ## Build placeholder for the output
             out_labels = np.ones(0)
             out_weights = np.ones(0)
-            out_image = np.ones([0,*image.shape[1:]])
+            out_image = np.ones([0,*image.shape[1:]], dtype=img_dtype)
         ####
 
         ## Do the processing
